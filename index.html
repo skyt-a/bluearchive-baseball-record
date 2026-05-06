@@ -1,0 +1,957 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>プレイボール抽選会 集計</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef5f9;
+      --ink: #17202a;
+      --muted: #637082;
+      --line: #d7e2ea;
+      --field: #4d946c;
+      --field-dark: #2c6f4b;
+      --sand: #dfc38a;
+      --sky: #5ba7dd;
+      --blue: #2f78d4;
+      --navy: #12385c;
+      --red: #dc5b4a;
+      --gold: #d69a20;
+      --white: #ffffff;
+      --shadow: 0 14px 40px rgba(30, 55, 82, 0.14);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(91, 167, 221, 0.22), transparent 340px),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .app {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 36px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--navy);
+      font-size: clamp(1.55rem, 2.8vw, 2.35rem);
+      letter-spacing: 0;
+      line-height: 1.15;
+    }
+
+    .source {
+      color: var(--muted);
+      font-size: 0.92rem;
+      text-decoration: none;
+      border-bottom: 1px solid currentColor;
+      white-space: nowrap;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(215, 226, 234, 0.9);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .scoreboard {
+      position: relative;
+      overflow: hidden;
+      min-height: 260px;
+      padding: 22px;
+      background:
+        radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.14) 0 15%, transparent 16%),
+        linear-gradient(145deg, var(--field), var(--field-dark));
+      color: var(--white);
+    }
+
+    .diamond {
+      position: absolute;
+      right: clamp(18px, 4vw, 48px);
+      bottom: -34px;
+      width: 188px;
+      aspect-ratio: 1;
+      transform: rotate(45deg);
+      background: var(--sand);
+      border: 8px solid rgba(255, 255, 255, 0.78);
+      box-shadow: inset 0 0 0 34px rgba(77, 148, 108, 0.72);
+      opacity: 0.88;
+    }
+
+    .diamond::before,
+    .diamond::after {
+      content: "";
+      position: absolute;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 2px;
+    }
+
+    .diamond::before {
+      width: 18px;
+      height: 18px;
+      right: -10px;
+      top: calc(50% - 9px);
+    }
+
+    .diamond::after {
+      width: 18px;
+      height: 18px;
+      left: calc(50% - 9px);
+      top: -10px;
+    }
+
+    .totals {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 20px;
+      width: min(620px, 100%);
+    }
+
+    .metric {
+      min-height: 118px;
+      padding: 16px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      backdrop-filter: blur(4px);
+    }
+
+    .metric span {
+      display: block;
+      font-size: 0.88rem;
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: clamp(1.65rem, 4vw, 2.55rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .submetrics {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.9rem;
+    }
+
+    .controls {
+      padding: 18px;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      color: var(--navy);
+      font-size: 1rem;
+    }
+
+    .prize-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .prize {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 76px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
+      color: var(--ink);
+      text-align: left;
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+    }
+
+    .prize:hover {
+      transform: translateY(-1px);
+      border-color: rgba(47, 120, 212, 0.42);
+      box-shadow: 0 10px 22px rgba(30, 55, 82, 0.12);
+    }
+
+    .prize:active {
+      transform: translateY(0);
+    }
+
+    .prize-name {
+      display: block;
+      color: var(--navy);
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .prize-reward {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.35;
+    }
+
+    .badge {
+      display: grid;
+      place-items: center;
+      min-width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      background: #edf5ff;
+      color: var(--blue);
+      font-weight: 900;
+    }
+
+    .prize[data-tone="gold"] .badge {
+      background: #fff6d8;
+      color: var(--gold);
+    }
+
+    .prize[data-tone="red"] .badge {
+      background: #fff0ed;
+      color: var(--red);
+    }
+
+    .right-column {
+      display: grid;
+      gap: 18px;
+    }
+
+    .summary {
+      padding: 18px;
+    }
+
+    .count-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .count {
+      min-height: 74px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+    }
+
+    .count span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .count strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--navy);
+      font-size: 1.35rem;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 40px;
+      padding: 0 13px;
+      border-radius: 8px;
+      background: var(--navy);
+      color: var(--white);
+      font-weight: 700;
+    }
+
+    .action.secondary {
+      background: #e8f0f6;
+      color: var(--navy);
+      border: 1px solid var(--line);
+    }
+
+    .action.danger {
+      background: #fff0ed;
+      color: #a9372b;
+      border: 1px solid #ffd0c8;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .history {
+      overflow: hidden;
+    }
+
+    .history-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .history-head h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 1rem;
+    }
+
+    .history-list {
+      max-height: 430px;
+      overflow: auto;
+    }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px 12px 18px;
+      border-bottom: 1px solid #edf2f6;
+      background: rgba(255, 255, 255, 0.84);
+    }
+
+    .history-row:last-child {
+      border-bottom: 0;
+    }
+
+    .history-main {
+      min-width: 0;
+    }
+
+    .history-name {
+      display: block;
+      color: var(--navy);
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .history-detail {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      overflow-wrap: anywhere;
+    }
+
+    .delete {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: #fff0ed;
+      color: #a9372b;
+      font-size: 1.1rem;
+      font-weight: 900;
+    }
+
+    .empty {
+      padding: 28px 18px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .status {
+      min-height: 20px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 540px) {
+      .app {
+        width: min(100% - 20px, 1180px);
+        padding-top: 18px;
+      }
+
+      .scoreboard,
+      .controls,
+      .summary {
+        padding: 14px;
+      }
+
+      .totals,
+      .prize-grid,
+      .count-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .diamond {
+        width: 148px;
+      }
+
+      .metric {
+        min-height: 96px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="topbar">
+      <h1>プレイボール抽選会 集計</h1>
+      <a class="source" href="https://bluearchive.wikiru.jp/?%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88135_%E3%80%90%E5%BE%A9%E5%88%BB%E3%80%91%E3%83%97%E3%83%AC%E3%82%A4%E3%83%9C%E3%83%BC%E3%83%AB%EF%BC%81%EF%BD%9E%E7%9B%AE%E6%8C%87%E3%81%9B%EF%BC%81%E6%BA%80%E5%A1%81%E3%83%9B%E3%83%BC%E3%83%A0%E3%83%A9%E3%83%B3%EF%BD%9E#Lottery" target="_blank" rel="noreferrer">イベント仕様</a>
+    </div>
+
+    <div class="layout">
+      <section>
+        <div class="panel scoreboard">
+          <div class="diamond" aria-hidden="true"></div>
+          <h2 class="section-title" style="color: rgba(255,255,255,.9)">現在の獲得量</h2>
+          <div class="totals">
+            <div class="metric">
+              <span>クレジット</span>
+              <strong id="creditTotal">0</strong>
+            </div>
+            <div class="metric">
+              <span>神名のかけら</span>
+              <strong id="fragmentTotal">0</strong>
+            </div>
+          </div>
+          <div class="submetrics">
+            <span class="pill">抽選 <strong id="drawTotal">0</strong> 回</span>
+            <span class="pill">平均 <strong id="creditAverage">0</strong> credit</span>
+            <span class="pill">平均 <strong id="fragmentAverage">0</strong> 個</span>
+          </div>
+        </div>
+
+        <div class="panel controls" style="margin-top: 18px">
+          <h2 class="section-title">賞を追加</h2>
+          <div class="prize-grid" id="prizeGrid"></div>
+        </div>
+      </section>
+
+      <aside class="right-column">
+        <section class="panel summary">
+          <h2 class="section-title">内訳</h2>
+          <div class="count-grid" id="countGrid"></div>
+          <div class="actions">
+            <button class="action secondary" id="toggleHistory" type="button" title="履歴表示を切り替え">履歴</button>
+            <button class="action secondary" id="selectAutoSaveFile" type="button" title="自動保存先JSONを選択">自動保存先</button>
+            <button class="action" id="downloadJson" type="button" title="JSONをダウンロード">JSON保存</button>
+            <button class="action secondary" id="uploadButton" type="button" title="JSONをアップロード">JSON読込</button>
+            <button class="action danger" id="clearAll" type="button" title="すべて削除">全削除</button>
+            <input class="file-input" id="uploadJson" type="file" accept="application/json,.json">
+          </div>
+          <div class="status" id="status"></div>
+        </section>
+
+        <section class="panel history" id="historyPanel">
+          <div class="history-head">
+            <h2>押下履歴</h2>
+            <span class="status" id="storageStatus"></span>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "bluearchive-playball-lottery-v1";
+    const FILE_HANDLE_DB = "bluearchive-playball-lottery-file";
+    const FILE_HANDLE_STORE = "handles";
+    const FILE_HANDLE_KEY = "autosave";
+
+    const prizes = [
+      { key: "first", name: "1等賞", shortName: "1等", credit: 1100000, fragments: 4, tone: "gold" },
+      { key: "second", name: "2等賞", shortName: "2等", credit: 900000, fragments: 2, tone: "gold" },
+      { key: "third-1", name: "3等賞", shortName: "3等", credit: 450000, fragments: 1 },
+      { key: "third-2", name: "3等賞", shortName: "3等", credit: 450000, fragments: 2 },
+      { key: "lucky-1", name: "ラッキー賞", shortName: "ラッキー", credit: 450000, fragments: 1, tone: "red" },
+      { key: "lucky-2", name: "ラッキー賞", shortName: "ラッキー", credit: 450000, fragments: 2, tone: "red" },
+      { key: "participation", name: "参加賞", shortName: "参加", credit: 350000, fragments: 1 },
+      { key: "miss", name: "ハズレ", shortName: "ハズレ", credit: 1500000, fragments: 0, tone: "red" },
+    ];
+
+    const prizeByKey = new Map(prizes.map((prize) => [prize.key, prize]));
+    const countLabels = [
+      ["first", "1等賞"],
+      ["second", "2等賞"],
+      ["third", "3等賞"],
+      ["lucky", "ラッキー賞"],
+      ["participation", "参加賞"],
+      ["miss", "ハズレ"],
+    ];
+
+    let state = {
+      version: 1,
+      exportedAt: null,
+      history: [],
+    };
+
+    const elements = {
+      prizeGrid: document.querySelector("#prizeGrid"),
+      countGrid: document.querySelector("#countGrid"),
+      historyList: document.querySelector("#historyList"),
+      historyPanel: document.querySelector("#historyPanel"),
+      creditTotal: document.querySelector("#creditTotal"),
+      fragmentTotal: document.querySelector("#fragmentTotal"),
+      drawTotal: document.querySelector("#drawTotal"),
+      creditAverage: document.querySelector("#creditAverage"),
+      fragmentAverage: document.querySelector("#fragmentAverage"),
+      status: document.querySelector("#status"),
+      storageStatus: document.querySelector("#storageStatus"),
+      toggleHistory: document.querySelector("#toggleHistory"),
+      selectAutoSaveFile: document.querySelector("#selectAutoSaveFile"),
+      downloadJson: document.querySelector("#downloadJson"),
+      uploadButton: document.querySelector("#uploadButton"),
+      uploadJson: document.querySelector("#uploadJson"),
+      clearAll: document.querySelector("#clearAll"),
+    };
+
+    let autoSaveHandle = null;
+    let autoWriteQueue = Promise.resolve();
+
+    function normalizePrizeKey(key) {
+      if (key.startsWith("third")) return "third";
+      if (key.startsWith("lucky")) return "lucky";
+      return key;
+    }
+
+    function rewardForEntry(entry) {
+      const prize = prizeByKey.get(entry.key);
+      return {
+        name: prize ? prize.name : entry.name,
+        credit: prize ? prize.credit : Number(entry.credit) || 0,
+        fragments: prize ? prize.fragments : Number(entry.fragments) || 0,
+      };
+    }
+
+    function normalizeEntry(entry) {
+      const reward = rewardForEntry(entry);
+      return {
+        id: entry.id || `${Date.now()}-${Math.random()}`,
+        key: entry.key,
+        name: reward.name,
+        credit: reward.credit,
+        fragments: reward.fragments,
+        createdAt: entry.createdAt || new Date().toISOString(),
+      };
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat("ja-JP").format(value);
+    }
+
+    function formatCredit(value) {
+      if (value >= 100000000) return `${(value / 100000000).toFixed(2)}億`;
+      if (value >= 10000) return `${(value / 10000).toFixed(1)}万`;
+      return formatNumber(value);
+    }
+
+    function setStatus(text) {
+      elements.status.textContent = text;
+      window.clearTimeout(setStatus.timer);
+      setStatus.timer = window.setTimeout(() => {
+        elements.status.textContent = "";
+      }, 2200);
+    }
+
+    function setAutoSaveStatus(text, connected = false) {
+      elements.storageStatus.textContent = text;
+      elements.selectAutoSaveFile.textContent = connected ? "自動保存中" : "自動保存先";
+    }
+
+    function totals() {
+      return state.history.reduce((acc, entry) => {
+        const reward = rewardForEntry(entry);
+        acc.credit += reward.credit;
+        acc.fragments += reward.fragments;
+        acc.counts[normalizePrizeKey(entry.key)] = (acc.counts[normalizePrizeKey(entry.key)] || 0) + 1;
+        return acc;
+      }, { credit: 0, fragments: 0, counts: {} });
+    }
+
+    function buildJsonPayload() {
+      state.history = state.history.map(normalizeEntry);
+      return {
+        ...state,
+        savedAt: new Date().toISOString(),
+        totals: totals(),
+      };
+    }
+
+    function save() {
+      state.history = state.history.map(normalizeEntry);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(buildJsonPayload()));
+      elements.storageStatus.textContent = "保存済み";
+      queueAutoFileWrite();
+    }
+
+    function openHandleDb() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(FILE_HANDLE_DB, 1);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore(FILE_HANDLE_STORE);
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function getStoredFileHandle() {
+      const db = await openHandleDb();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(FILE_HANDLE_STORE, "readonly");
+        const request = transaction.objectStore(FILE_HANDLE_STORE).get(FILE_HANDLE_KEY);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function storeFileHandle(handle) {
+      const db = await openHandleDb();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(FILE_HANDLE_STORE, "readwrite");
+        transaction.objectStore(FILE_HANDLE_STORE).put(handle, FILE_HANDLE_KEY);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    }
+
+    async function requestAutoSavePermission(handle) {
+      const options = { mode: "readwrite" };
+      if ((await handle.queryPermission(options)) === "granted") return true;
+      return (await handle.requestPermission(options)) === "granted";
+    }
+
+    async function writeAutoSaveFile() {
+      if (!autoSaveHandle) return;
+      const writable = await autoSaveHandle.createWritable();
+      await writable.write(JSON.stringify(buildJsonPayload(), null, 2));
+      await writable.close();
+      setAutoSaveStatus("JSON自動保存済み", true);
+    }
+
+    function queueAutoFileWrite() {
+      if (!autoSaveHandle) return;
+      autoWriteQueue = autoWriteQueue
+        .then(writeAutoSaveFile)
+        .catch((error) => {
+          console.error(error);
+          setAutoSaveStatus("JSON自動保存失敗", Boolean(autoSaveHandle));
+          setStatus("JSON自動保存に失敗しました");
+        });
+    }
+
+    async function selectAutoSaveFile() {
+      if (!("showSaveFilePicker" in window)) {
+        setStatus("このブラウザでは自動保存先を選べません");
+        setAutoSaveStatus("File System Access API未対応");
+        return;
+      }
+
+      try {
+        let handle = autoSaveHandle;
+        if (handle) {
+          const permission = await handle.queryPermission({ mode: "readwrite" });
+          if (permission !== "granted") {
+            if (!(await requestAutoSavePermission(handle))) {
+              setStatus("ファイル書き込み権限がありません");
+              return;
+            }
+          } else {
+            handle = null;
+          }
+        }
+
+        if (!handle) {
+          handle = await window.showSaveFilePicker({
+            suggestedName: "bluearchive-playball-lottery.json",
+            types: [{
+              description: "JSON",
+              accept: { "application/json": [".json"] },
+            }],
+          });
+        }
+
+        if (!(await requestAutoSavePermission(handle))) {
+          setStatus("ファイル書き込み権限がありません");
+          return;
+        }
+
+        autoSaveHandle = handle;
+        await storeFileHandle(handle);
+        await writeAutoSaveFile();
+        setStatus("自動保存先を設定しました");
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          console.error(error);
+          setStatus("自動保存先の設定に失敗しました");
+        }
+      }
+    }
+
+    async function restoreAutoSaveFile() {
+      if (!("showSaveFilePicker" in window)) {
+        setAutoSaveStatus("File System Access API未対応");
+        return;
+      }
+
+      try {
+        const handle = await getStoredFileHandle();
+        if (!handle) {
+          setAutoSaveStatus("localStorage保存中");
+          return;
+        }
+
+        autoSaveHandle = handle;
+        const permission = await handle.queryPermission({ mode: "readwrite" });
+        if (permission === "granted") {
+          setAutoSaveStatus("JSON自動保存 ready", true);
+          queueAutoFileWrite();
+        } else {
+          setAutoSaveStatus("自動保存先の再許可が必要");
+        }
+      } catch (error) {
+        console.error(error);
+        setAutoSaveStatus("localStorage保存中");
+      }
+    }
+
+    function renderPrizes() {
+      elements.prizeGrid.innerHTML = prizes.map((prize) => `
+        <button class="prize" type="button" data-key="${prize.key}" data-tone="${prize.tone || "blue"}">
+          <span>
+            <span class="prize-name">${prize.name}${prize.key.includes("-") ? ` +${prize.fragments}` : ""}</span>
+            <span class="prize-reward">${formatCredit(prize.credit)} credit / かけら ${prize.fragments}</span>
+          </span>
+          <span class="badge">${prize.shortName}</span>
+        </button>
+      `).join("");
+    }
+
+    function renderCounts(summary) {
+      elements.countGrid.innerHTML = countLabels.map(([key, label]) => `
+        <div class="count">
+          <span>${label}</span>
+          <strong>${formatNumber(summary.counts[key] || 0)}</strong>
+        </div>
+      `).join("");
+    }
+
+    function renderHistory() {
+      if (!state.history.length) {
+        elements.historyList.innerHTML = `<div class="empty">履歴なし</div>`;
+        return;
+      }
+
+      elements.historyList.innerHTML = [...state.history].reverse().map((entry, index) => {
+        const originalIndex = state.history.length - 1 - index;
+        const date = new Date(entry.createdAt);
+        const dateText = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("ja-JP");
+        const reward = rewardForEntry(entry);
+        return `
+          <div class="history-row">
+            <div class="history-main">
+              <span class="history-name">${reward.name}${entry.key.includes("-") ? ` +${reward.fragments}` : ""}</span>
+              <span class="history-detail">${formatCredit(reward.credit)} credit / かけら ${reward.fragments} / ${dateText}</span>
+            </div>
+            <button class="delete" type="button" data-index="${originalIndex}" title="削除">×</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function render() {
+      const summary = totals();
+      const draws = state.history.length;
+      elements.creditTotal.textContent = formatNumber(summary.credit);
+      elements.fragmentTotal.textContent = formatNumber(summary.fragments);
+      elements.drawTotal.textContent = formatNumber(draws);
+      elements.creditAverage.textContent = draws ? formatCredit(summary.credit / draws) : "0";
+      elements.fragmentAverage.textContent = draws ? (summary.fragments / draws).toFixed(2) : "0";
+      renderCounts(summary);
+      renderHistory();
+    }
+
+    function addPrize(key) {
+      const prize = prizeByKey.get(key);
+      if (!prize) return;
+      state.history.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+        key: prize.key,
+        name: prize.name,
+        credit: prize.credit,
+        fragments: prize.fragments,
+        createdAt: new Date().toISOString(),
+      });
+      save();
+      render();
+    }
+
+    function deleteHistory(index) {
+      state.history.splice(index, 1);
+      save();
+      render();
+    }
+
+    function loadFromLocalStorage() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.history)) {
+          state = {
+            version: Number(parsed.version) || 1,
+            exportedAt: parsed.exportedAt || null,
+            history: parsed.history.filter((entry) => prizeByKey.has(entry.key)).map(normalizeEntry),
+          };
+          save();
+        }
+      } catch {
+        setStatus("保存データを読めませんでした");
+      }
+    }
+
+    function exportJson() {
+      const payload = buildJsonPayload();
+      payload.exportedAt = new Date().toISOString();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `bluearchive-playball-lottery-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setStatus("JSON保存完了");
+    }
+
+    function importJson(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result));
+          if (!Array.isArray(parsed.history)) throw new Error("invalid");
+          state = {
+            version: Number(parsed.version) || 1,
+            exportedAt: parsed.exportedAt || null,
+            history: parsed.history
+              .filter((entry) => prizeByKey.has(entry.key))
+              .map(normalizeEntry),
+          };
+          save();
+          render();
+          setStatus("JSON読込完了");
+        } catch {
+          setStatus("JSON読込失敗");
+        } finally {
+          elements.uploadJson.value = "";
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    elements.prizeGrid.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-key]");
+      if (button) addPrize(button.dataset.key);
+    });
+
+    elements.historyList.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-index]");
+      if (button) deleteHistory(Number(button.dataset.index));
+    });
+
+    elements.toggleHistory.addEventListener("click", () => {
+      elements.historyPanel.hidden = !elements.historyPanel.hidden;
+    });
+
+    elements.downloadJson.addEventListener("click", exportJson);
+    elements.selectAutoSaveFile.addEventListener("click", selectAutoSaveFile);
+    elements.uploadButton.addEventListener("click", () => elements.uploadJson.click());
+    elements.uploadJson.addEventListener("change", (event) => importJson(event.target.files[0]));
+    elements.clearAll.addEventListener("click", () => {
+      if (!state.history.length) return;
+      if (!confirm("すべて削除しますか？")) return;
+      state.history = [];
+      save();
+      render();
+      setStatus("削除完了");
+    });
+
+    renderPrizes();
+    loadFromLocalStorage();
+    render();
+    restoreAutoSaveFile();
+  </script>
+</body>
+</html>
