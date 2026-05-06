@@ -38,7 +38,8 @@
     }
 
     button,
-    input {
+    input,
+    textarea {
       font: inherit;
     }
 
@@ -342,6 +343,49 @@
       display: none;
     }
 
+    .text-transfer {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .text-transfer[hidden] {
+      display: none;
+    }
+
+    .transfer-label {
+      color: var(--navy);
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+
+    .transfer-text {
+      width: 100%;
+      min-height: 104px;
+      resize: vertical;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .transfer-text:focus {
+      outline: 2px solid rgba(47, 120, 212, 0.28);
+      border-color: rgba(47, 120, 212, 0.62);
+    }
+
+    .transfer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
     .history {
       overflow: hidden;
     }
@@ -505,8 +549,18 @@
             <button class="action secondary" id="selectAutoSaveFile" type="button" title="自動保存先JSONを選択">自動保存先</button>
             <button class="action" id="downloadJson" type="button" title="JSONをダウンロード">JSON保存</button>
             <button class="action secondary" id="uploadButton" type="button" title="JSONをアップロード">JSON読込</button>
+            <button class="action secondary" id="toggleTransfer" type="button" title="文字列インポート/エクスポート">文字列</button>
             <button class="action danger" id="clearAll" type="button" title="すべて削除">全削除</button>
             <input class="file-input" id="uploadJson" type="file" accept="application/json,.json">
+          </div>
+          <div class="text-transfer" id="textTransfer" hidden>
+            <label class="transfer-label" for="transferText">文字列</label>
+            <textarea class="transfer-text" id="transferText" spellcheck="false" placeholder="JSON / base64 / BAR1:"></textarea>
+            <div class="transfer-actions">
+              <button class="action" id="copyCompact" type="button" title="短縮文字列をコピー">短縮コピー</button>
+              <button class="action secondary" id="copyBase64" type="button" title="base64文字列をコピー">base64コピー</button>
+              <button class="action secondary" id="importText" type="button" title="貼り付けた文字列を読み込む">貼付読込</button>
+            </div>
           </div>
           <div class="status" id="status"></div>
         </section>
@@ -527,6 +581,8 @@
     const FILE_HANDLE_DB = "bluearchive-playball-lottery-file";
     const FILE_HANDLE_STORE = "handles";
     const FILE_HANDLE_KEY = "autosave";
+    const COMPACT_TEXT_PREFIX = "BAR1:";
+    const COMPACT_JSON_TEXT_PREFIX = "BARJ1:";
 
     const prizes = [
       { key: "first", name: "1等賞", shortName: "1等", credit: 1100000, fragments: 4, tone: "gold" },
@@ -540,6 +596,8 @@
     ];
 
     const prizeByKey = new Map(prizes.map((prize) => [prize.key, prize]));
+    const compactKeyByPrizeKey = new Map(prizes.map((prize, index) => [prize.key, index.toString(36)]));
+    const prizeKeyByCompactKey = new Map(prizes.map((prize, index) => [index.toString(36), prize.key]));
     const countLabels = [
       ["first", "1等賞"],
       ["second", "2等賞"],
@@ -572,6 +630,12 @@
       downloadJson: document.querySelector("#downloadJson"),
       uploadButton: document.querySelector("#uploadButton"),
       uploadJson: document.querySelector("#uploadJson"),
+      toggleTransfer: document.querySelector("#toggleTransfer"),
+      textTransfer: document.querySelector("#textTransfer"),
+      transferText: document.querySelector("#transferText"),
+      copyCompact: document.querySelector("#copyCompact"),
+      copyBase64: document.querySelector("#copyBase64"),
+      importText: document.querySelector("#importText"),
       clearAll: document.querySelector("#clearAll"),
     };
 
@@ -645,6 +709,57 @@
         savedAt: new Date().toISOString(),
         totals: totals(),
       };
+    }
+
+    function buildExportPayload() {
+      const payload = buildJsonPayload();
+      payload.exportedAt = new Date().toISOString();
+      return payload;
+    }
+
+    function buildCompactPayload() {
+      state.history = state.history.map(normalizeEntry);
+      return {
+        v: 1,
+        h: state.history
+          .filter((entry) => compactKeyByPrizeKey.has(entry.key))
+          .map((entry) => [compactKeyByPrizeKey.get(entry.key), entry.createdAt]),
+      };
+    }
+
+    function normalizeImportedState(parsed) {
+      if (!parsed || !Array.isArray(parsed.history)) throw new Error("invalid");
+      return {
+        version: Number(parsed.version) || 1,
+        exportedAt: parsed.exportedAt || null,
+        history: parsed.history
+          .filter((entry) => entry && prizeByKey.has(entry.key))
+          .map(normalizeEntry),
+      };
+    }
+
+    function expandCompactPayload(parsed) {
+      if (!parsed || !Array.isArray(parsed.h)) throw new Error("invalid");
+      return {
+        version: 1,
+        exportedAt: null,
+        history: parsed.h
+          .map((entry) => {
+            const compactKey = Array.isArray(entry) ? entry[0] : entry;
+            const createdAt = Array.isArray(entry) ? entry[1] : null;
+            return {
+              key: prizeKeyByCompactKey.get(String(compactKey)),
+              createdAt: typeof createdAt === "string" ? createdAt : new Date().toISOString(),
+            };
+          })
+          .filter((entry) => entry.key),
+      };
+    }
+
+    function applyImportedPayload(parsed) {
+      state = normalizeImportedState(parsed);
+      save();
+      render();
     }
 
     function save() {
@@ -785,6 +900,133 @@
       }
     }
 
+    function bytesToBase64(bytes) {
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    function base64ToBytes(value) {
+      const compactValue = value
+        .replace(/^data:[^,]+;base64,/i, "")
+        .replace(/\s/g, "")
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+      const paddedValue = compactValue.padEnd(Math.ceil(compactValue.length / 4) * 4, "=");
+      const binary = atob(paddedValue);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return bytes;
+    }
+
+    function toBase64Url(bytes) {
+      return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+
+    function jsonToBase64(jsonText) {
+      return bytesToBase64(new TextEncoder().encode(jsonText));
+    }
+
+    function base64ToJson(base64Text) {
+      return new TextDecoder().decode(base64ToBytes(base64Text));
+    }
+
+    async function compressText(text) {
+      if (!("CompressionStream" in window)) return null;
+      const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    async function decompressText(bytes) {
+      if (!("DecompressionStream" in window)) throw new Error("unsupported");
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+      return new Response(stream).text();
+    }
+
+    async function compactPayloadToText(payload) {
+      const jsonText = JSON.stringify(payload);
+      let compressed = null;
+      try {
+        compressed = await compressText(jsonText);
+      } catch {
+        compressed = null;
+      }
+      if (!compressed) {
+        return `${COMPACT_JSON_TEXT_PREFIX}${toBase64Url(new TextEncoder().encode(jsonText))}`;
+      }
+      return `${COMPACT_TEXT_PREFIX}${toBase64Url(compressed)}`;
+    }
+
+    async function parseTransferPayload(value) {
+      const text = value.trim();
+      if (!text) throw new Error("empty");
+
+      if (text.startsWith(COMPACT_TEXT_PREFIX)) {
+        const jsonText = await decompressText(base64ToBytes(text.slice(COMPACT_TEXT_PREFIX.length)));
+        return expandCompactPayload(JSON.parse(jsonText));
+      }
+
+      if (text.startsWith(COMPACT_JSON_TEXT_PREFIX)) {
+        const jsonText = base64ToJson(text.slice(COMPACT_JSON_TEXT_PREFIX.length));
+        return expandCompactPayload(JSON.parse(jsonText));
+      }
+
+      const jsonText = text.startsWith("{") ? text : base64ToJson(text.replace(/^B64JSON:/i, ""));
+      return JSON.parse(jsonText);
+    }
+
+    async function writeTransferText(text, successText) {
+      elements.transferText.value = text;
+      elements.transferText.focus();
+      elements.transferText.select();
+
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+        } else if (!document.execCommand("copy")) {
+          throw new Error("copy failed");
+        }
+        setStatus(successText);
+      } catch {
+        setStatus("文字列を作成しました");
+      }
+    }
+
+    async function copyCompactText() {
+      try {
+        const transferText = await compactPayloadToText(buildCompactPayload());
+        const statusText = transferText.startsWith(COMPACT_TEXT_PREFIX) ? "短縮コピー完了" : "短縮文字列を作成しました";
+        await writeTransferText(transferText, statusText);
+      } catch (error) {
+        console.error(error);
+        setStatus("短縮文字列の作成に失敗");
+      }
+    }
+
+    async function copyBase64Text() {
+      try {
+        await writeTransferText(jsonToBase64(JSON.stringify(buildExportPayload())), "base64コピー完了");
+      } catch (error) {
+        console.error(error);
+        setStatus("base64作成に失敗");
+      }
+    }
+
+    async function importTransferText() {
+      try {
+        applyImportedPayload(await parseTransferPayload(elements.transferText.value));
+        setStatus("文字列読込完了");
+      } catch (error) {
+        console.error(error);
+        setStatus("文字列読込失敗");
+      }
+    }
+
     function renderPrizes() {
       elements.prizeGrid.innerHTML = prizes.map((prize) => `
         <button class="prize" type="button" data-key="${prize.key}" data-tone="${prize.tone || "blue"}">
@@ -866,23 +1108,15 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed.history)) {
-          state = {
-            version: Number(parsed.version) || 1,
-            exportedAt: parsed.exportedAt || null,
-            history: parsed.history.filter((entry) => prizeByKey.has(entry.key)).map(normalizeEntry),
-          };
-          save();
-        }
+        state = normalizeImportedState(JSON.parse(raw));
+        save();
       } catch {
         setStatus("保存データを読めませんでした");
       }
     }
 
     function exportJson() {
-      const payload = buildJsonPayload();
-      payload.exportedAt = new Date().toISOString();
+      const payload = buildExportPayload();
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -900,17 +1134,7 @@
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          const parsed = JSON.parse(String(reader.result));
-          if (!Array.isArray(parsed.history)) throw new Error("invalid");
-          state = {
-            version: Number(parsed.version) || 1,
-            exportedAt: parsed.exportedAt || null,
-            history: parsed.history
-              .filter((entry) => prizeByKey.has(entry.key))
-              .map(normalizeEntry),
-          };
-          save();
-          render();
+          applyImportedPayload(JSON.parse(String(reader.result)));
           setStatus("JSON読込完了");
         } catch {
           setStatus("JSON読込失敗");
@@ -939,6 +1163,13 @@
     elements.selectAutoSaveFile.addEventListener("click", selectAutoSaveFile);
     elements.uploadButton.addEventListener("click", () => elements.uploadJson.click());
     elements.uploadJson.addEventListener("change", (event) => importJson(event.target.files[0]));
+    elements.toggleTransfer.addEventListener("click", () => {
+      elements.textTransfer.hidden = !elements.textTransfer.hidden;
+      if (!elements.textTransfer.hidden) elements.transferText.focus();
+    });
+    elements.copyCompact.addEventListener("click", copyCompactText);
+    elements.copyBase64.addEventListener("click", copyBase64Text);
+    elements.importText.addEventListener("click", importTransferText);
     elements.clearAll.addEventListener("click", () => {
       if (!state.history.length) return;
       if (!confirm("すべて削除しますか？")) return;
