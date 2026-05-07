@@ -547,6 +547,8 @@
           <div class="actions">
             <button class="action secondary" id="toggleHistory" type="button" title="履歴表示を切り替え">履歴</button>
             <button class="action secondary" id="selectAutoSaveFile" type="button" title="自動保存先JSONを選択">自動保存先</button>
+            <button class="action" id="shareImage" type="button" title="記録画像をSNSへ共有">SNS共有</button>
+            <button class="action secondary" id="downloadImage" type="button" title="記録画像をPNGでダウンロード">画像保存</button>
             <button class="action" id="downloadJson" type="button" title="JSONをダウンロード">JSON保存</button>
             <button class="action secondary" id="uploadButton" type="button" title="JSONをアップロード">JSON読込</button>
             <button class="action secondary" id="toggleTransfer" type="button" title="文字列インポート/エクスポート">文字列</button>
@@ -627,6 +629,8 @@
       storageStatus: document.querySelector("#storageStatus"),
       toggleHistory: document.querySelector("#toggleHistory"),
       selectAutoSaveFile: document.querySelector("#selectAutoSaveFile"),
+      shareImage: document.querySelector("#shareImage"),
+      downloadImage: document.querySelector("#downloadImage"),
       downloadJson: document.querySelector("#downloadJson"),
       uploadButton: document.querySelector("#uploadButton"),
       uploadJson: document.querySelector("#uploadJson"),
@@ -1145,6 +1149,216 @@
       reader.readAsText(file);
     }
 
+
+    function drawRoundedRect(context, x, y, width, height, radius) {
+      const safeRadius = Math.min(radius, width / 2, height / 2);
+      context.beginPath();
+      context.moveTo(x + safeRadius, y);
+      context.arcTo(x + width, y, x + width, y + height, safeRadius);
+      context.arcTo(x + width, y + height, x, y + height, safeRadius);
+      context.arcTo(x, y + height, x, y, safeRadius);
+      context.arcTo(x, y, x + width, y, safeRadius);
+      context.closePath();
+    }
+
+    function drawText(context, text, x, y, options = {}) {
+      const {
+        color = "#17202a",
+        font = "32px sans-serif",
+        align = "left",
+        baseline = "alphabetic",
+      } = options;
+      context.save();
+      context.fillStyle = color;
+      context.font = font;
+      context.textAlign = align;
+      context.textBaseline = baseline;
+      context.fillText(text, x, y);
+      context.restore();
+    }
+
+    function buildShareText(summary = totals()) {
+      const draws = state.history.length;
+      return [
+        "プレイボール抽選会 集計",
+        `抽選 ${formatNumber(draws)} 回`,
+        `クレジット ${formatNumber(summary.credit)}`,
+        `神名のかけら ${formatNumber(summary.fragments)} 個`,
+      ].join(" / ");
+    }
+
+    function createRecordCanvas() {
+      const summary = totals();
+      const draws = state.history.length;
+      const canvas = document.createElement("canvas");
+      canvas.width = 1200;
+      canvas.height = 630;
+      const context = canvas.getContext("2d");
+      const fontFamily = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+      context.fillStyle = "#eef5f9";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      const skyGradient = context.createLinearGradient(0, 0, 0, 350);
+      skyGradient.addColorStop(0, "rgba(91, 167, 221, 0.42)");
+      skyGradient.addColorStop(1, "rgba(238, 245, 249, 0)");
+      context.fillStyle = skyGradient;
+      context.fillRect(0, 0, canvas.width, 360);
+
+      context.save();
+      context.translate(920, 420);
+      context.rotate(Math.PI / 4);
+      context.fillStyle = "#dfc38a";
+      context.strokeStyle = "rgba(255, 255, 255, 0.82)";
+      context.lineWidth = 16;
+      context.fillRect(-110, -110, 220, 220);
+      context.strokeRect(-110, -110, 220, 220);
+      context.fillStyle = "rgba(77, 148, 108, 0.78)";
+      context.fillRect(-65, -65, 130, 130);
+      context.restore();
+
+      drawRoundedRect(context, 56, 46, 1088, 538, 34);
+      context.fillStyle = "rgba(255, 255, 255, 0.92)";
+      context.fill();
+      context.strokeStyle = "rgba(215, 226, 234, 0.96)";
+      context.lineWidth = 2;
+      context.stroke();
+
+      const headerGradient = context.createLinearGradient(72, 72, 1128, 260);
+      headerGradient.addColorStop(0, "#4d946c");
+      headerGradient.addColorStop(1, "#2c6f4b");
+      drawRoundedRect(context, 72, 72, 1056, 216, 24);
+      context.fillStyle = headerGradient;
+      context.fill();
+
+      drawText(context, "プレイボール抽選会 集計", 112, 130, {
+        color: "rgba(255,255,255,.92)",
+        font: `700 36px ${fontFamily}`,
+      });
+      drawText(context, "現在の獲得量", 112, 180, {
+        color: "rgba(255,255,255,.72)",
+        font: `500 24px ${fontFamily}`,
+      });
+      drawText(context, `抽選 ${formatNumber(draws)} 回`, 1088, 126, {
+        color: "#ffffff",
+        font: `800 34px ${fontFamily}`,
+        align: "right",
+      });
+
+      const metrics = [
+        ["クレジット", formatNumber(summary.credit), 112],
+        ["神名のかけら", `${formatNumber(summary.fragments)} 個`, 610],
+      ];
+      metrics.forEach(([label, value, x]) => {
+        drawRoundedRect(context, x, 320, 440, 132, 22);
+        context.fillStyle = "#fbfdff";
+        context.fill();
+        context.strokeStyle = "#d7e2ea";
+        context.lineWidth = 2;
+        context.stroke();
+        drawText(context, label, x + 28, 365, {
+          color: "#637082",
+          font: `700 24px ${fontFamily}`,
+        });
+        drawText(context, value, x + 28, 425, {
+          color: "#12385c",
+          font: `900 48px ${fontFamily}`,
+        });
+      });
+
+      const countItems = countLabels.map(([key, label]) => [label, summary.counts[key] || 0]);
+      const startX = 112;
+      const startY = 488;
+      const itemWidth = 156;
+      countItems.forEach(([label, count], index) => {
+        const x = startX + index * (itemWidth + 12);
+        drawRoundedRect(context, x, startY, itemWidth, 58, 14);
+        context.fillStyle = "#e8f0f6";
+        context.fill();
+        drawText(context, label, x + 14, startY + 23, {
+          color: "#637082",
+          font: `700 17px ${fontFamily}`,
+        });
+        drawText(context, `${formatNumber(count)}回`, x + itemWidth - 14, startY + 42, {
+          color: "#12385c",
+          font: `900 22px ${fontFamily}`,
+          align: "right",
+        });
+      });
+
+      const generatedAt = new Date().toLocaleString("ja-JP");
+      drawText(context, generatedAt, 1088, 548, {
+        color: "#637082",
+        font: `500 18px ${fontFamily}`,
+        align: "right",
+      });
+
+      return canvas;
+    }
+
+    function canvasToBlob(canvas) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("image generation failed"));
+        }, "image/png");
+      });
+    }
+
+    async function generateRecordImageBlob() {
+      return canvasToBlob(createRecordCanvas());
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function downloadRecordImage() {
+      try {
+        const blob = await generateRecordImageBlob();
+        downloadBlob(blob, `bluearchive-playball-record-${new Date().toISOString().slice(0, 10)}.png`);
+        setStatus("画像保存完了");
+      } catch (error) {
+        console.error(error);
+        setStatus("画像保存に失敗");
+      }
+    }
+
+    async function shareRecordImage() {
+      try {
+        const blob = await generateRecordImageBlob();
+        const file = new File([blob], `bluearchive-playball-record-${new Date().toISOString().slice(0, 10)}.png`, { type: "image/png" });
+        const shareData = {
+          title: "プレイボール抽選会 集計",
+          text: buildShareText(),
+          files: [file],
+        };
+
+        if (navigator.canShare && navigator.canShare({ files: shareData.files }) && navigator.share) {
+          await navigator.share(shareData);
+          setStatus("共有しました");
+          return;
+        }
+
+        downloadBlob(blob, file.name);
+        const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(buildShareText())}`;
+        window.open(shareUrl, "_blank", "noopener,noreferrer");
+        setStatus("画像を保存し、SNS投稿画面を開きました");
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          console.error(error);
+          setStatus("共有に失敗");
+        }
+      }
+    }
+
     elements.prizeGrid.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-key]");
       if (button) addPrize(button.dataset.key);
@@ -1159,6 +1373,8 @@
       elements.historyPanel.hidden = !elements.historyPanel.hidden;
     });
 
+    elements.shareImage.addEventListener("click", shareRecordImage);
+    elements.downloadImage.addEventListener("click", downloadRecordImage);
     elements.downloadJson.addEventListener("click", exportJson);
     elements.selectAutoSaveFile.addEventListener("click", selectAutoSaveFile);
     elements.uploadButton.addEventListener("click", () => elements.uploadJson.click());
